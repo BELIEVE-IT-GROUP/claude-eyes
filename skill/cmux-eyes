@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# cmux-eyes — skill entrypoint
+#
+# Dispatches subcommands to the claude-eyes daemon CLI (npx tsx daemon/cli.ts)
+# and to the hook installer/uninstaller scripts.
+#
+# Subcommands:
+#   start             Boot the daemon in the foreground.
+#   stop              Gracefully shut down the daemon.
+#   status            Print the latest WorkerOutput JSON. Exit 0 if reachable.
+#   latest            Alias for status.
+#   snapshot          Force one capture right now.
+#   doctor            Run a battery of health checks.
+#   install-hooks     Wire hooks into ~/.claude/settings.json.
+#   uninstall-hooks   Remove hooks from ~/.claude/settings.json.
+#   help              Print usage.
+
+set -euo pipefail
+
+# Resolve repo root: skill/ lives directly under claude-eyes/.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# If installed as a symlink in ~/.claude/skills/cmux-eyes, follow it.
+if [ -L "${BASH_SOURCE[0]}" ]; then
+    REAL_SCRIPT="$(readlink "${BASH_SOURCE[0]}")"
+    case "$REAL_SCRIPT" in
+        /*) SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd -P)" ;;
+        *)  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd "$(dirname "$REAL_SCRIPT")" && pwd -P)" ;;
+    esac
+fi
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+
+PORT="${CLAUDE_EYES_PORT:-14242}"
+HOST="127.0.0.1"
+
+usage() {
+    cat <<EOF
+cmux-eyes — eyes on the cmux preview for Claude Code.
+
+Usage:
+  cmux-eyes <subcommand> [args]
+
+Subcommands:
+  start             Start the daemon (foreground).
+  stop              Stop the daemon.
+  status            Print latest capture metadata (JSON).
+  latest            Alias for status.
+  snapshot          Force one capture now.
+  doctor            Run health checks.
+  install-hooks     Wire Claude Code hooks (calls hooks/install.sh).
+  uninstall-hooks   Remove Claude Code hooks (calls hooks/uninstall.sh).
+  help              This message.
+
+Environment:
+  CLAUDE_EYES_DEV_URL   Dev server URL (default http://localhost:3000)
+  CLAUDE_EYES_PORT      Daemon HTTP port (default 14242)
+EOF
+}
+
+require_node() {
+    if ! command -v node >/dev/null 2>&1; then
+        echo "error: node is required (>=20)" >&2
+        exit 1
+    fi
+}
+
+require_npx() {
+    if ! command -v npx >/dev/null 2>&1; then
+        echo "error: npx is required (ships with Node)" >&2
+        exit 1
+    fi
+}
+
+http_get() {
+    # $1 = path; prints body to stdout, exit non-zero on connection failure.
+    curl -fsS --max-time 8 "http://${HOST}:${PORT}$1"
+}
+
+http_post() {
+    # $1 = path, $2 = body (default "{}")
+    local body="${2:-{}}"
+    curl -fsS --max-time 15 -X POST -H "Content-Type: application/json" \
+        --data "$body" "http://${HOST}:${PORT}$1"
+}
+
+cmd_start() {
+    require_node
+    require_npx
+    cd "$REPO_ROOT"
+    exec npx tsx daemon/cli.ts start "$@"
+}
+
+cmd_stop() {
+    # Try graceful shutdown endpoint first.
+    if http_post /shutdown "{}" >/dev/null 2>&1; then
+        echo "claude-eyes daemon shutdown requested"
+    else
+        # Fallback: pkill the daemon process.
+        if pkill -f "daemon/(index|cli).ts" >/dev/null 2>&1; then
+            echo "claude-eyes daemon killed via pkill"
+        else
+            echo "no running daemon found"
+        fi
+    fi
+    # Clean up PID file if present.
+    rm -f "$REPO_ROOT/.workspace/daemon.pid" 2>/dev/null || true
+}
+
+cmd_status() {
+    if ! body="$(http_get /latest 2>/dev/null)"; then
+        echo '{"ok":false,"error":"daemon unreachable","hint":"run: cmux-eyes start &"}' >&2
+        exit 1
+    fi
+    # Validate JSON.
+    if ! printf '%s' "$body" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const o=JSON.parse(s);if(!("devUrl" in o)||!("framesRetained" in o))process.exit(2);})' 2>/dev/null; then
+        echo "error: daemon returned malformed /latest response" >&2
+        printf '%s\n' "$body" >&2
+        exit 2
+    fi
+    printf '%s\n' "$body"
+}
+
+cmd_snapshot() {
+    if ! body="$(http_post /snapshot "{}" 2>/dev/null)"; then
+        echo '{"ok":false,"error":"daemon unreachable","hint":"run: cmux-eyes start &"}' >&2
+        exit 1
+    fi
+    printf '%s\n' "$body"
+}
+
+cmd_doctor() {
+    local fail=0
+    echo "== cmux-eyes doctor =="
+    # Node version.
+    if command -v node >/dev/null 2>&1; then
+        local nv
+        nv="$(node -v 2>/dev/null || echo unknown)"
+        echo "  node: $nv"
+        case "$nv" in
+            v2[0-9].*|v[3-9][0-9].*) ;;
+            *) echo "  WARN: node >=20 recommended"; fail=1;;
+        esac
+    else
+        echo "  node: MISSING"; fail=1
+    fi
+    # npx.
+    if command -v npx >/dev/null 2>&1; then echo "  npx: ok"; else echo "  npx: MISSING"; fail=1; fi
+    # Daemon health.
+    if http_get /healthz >/dev/null 2>&1; then
+        echo "  daemon: reachable on http://${HOST}:${PORT}"
+    else
+        echo "  daemon: not running (run: cmux-eyes start &)"
+    fi
+    # Dev URL.
+    local dev_url="${CLAUDE_EYES_DEV_URL:-http://localhost:3000}"
+    if curl -fsS --max-time 4 -o /dev/null "$dev_url" 2>/dev/null; then
+        echo "  dev server: reachable at $dev_url"
+    else
+        echo "  dev server: NOT reachable at $dev_url (set CLAUDE_EYES_DEV_URL)"
+    fi
+    # Eyes dir.
+    local eyes_dir="${CLAUDE_EYES_EYES_DIR:-$REPO_ROOT/.claude/eyes}"
+    if mkdir -p "$eyes_dir" 2>/dev/null && [ -w "$eyes_dir" ]; then
+        echo "  eyes dir: writable ($eyes_dir)"
+    else
+        echo "  eyes dir: NOT writable ($eyes_dir)"; fail=1
+    fi
+    # Hooks installed?
+    local settings="$HOME/.claude/settings.json"
+    if [ -f "$settings" ] && grep -q "claude-eyes:v1" "$settings" 2>/dev/null; then
+        echo "  hooks: installed in $settings"
+    else
+        echo "  hooks: NOT installed (run: cmux-eyes install-hooks)"
+    fi
+    if [ "$fail" = "1" ]; then
+        exit 1
+    fi
+}
+
+cmd_install_hooks() {
+    local installer="$REPO_ROOT/hooks/install.sh"
+    if [ ! -x "$installer" ]; then
+        chmod +x "$installer" 2>/dev/null || true
+    fi
+    if [ ! -f "$installer" ]; then
+        echo "error: missing $installer" >&2
+        exit 1
+    fi
+    exec "$installer" "$@"
+}
+
+cmd_uninstall_hooks() {
+    local uninstaller="$REPO_ROOT/hooks/uninstall.sh"
+    if [ ! -x "$uninstaller" ]; then
+        chmod +x "$uninstaller" 2>/dev/null || true
+    fi
+    if [ ! -f "$uninstaller" ]; then
+        echo "error: missing $uninstaller" >&2
+        exit 1
+    fi
+    exec "$uninstaller" "$@"
+}
+
+subcmd="${1:-help}"
+[ "$#" -gt 0 ] && shift || true
+
+case "$subcmd" in
+    start)            cmd_start "$@" ;;
+    stop)             cmd_stop "$@" ;;
+    status|latest)    cmd_status "$@" ;;
+    snapshot)         cmd_snapshot "$@" ;;
+    doctor)           cmd_doctor "$@" ;;
+    install-hooks)    cmd_install_hooks "$@" ;;
+    uninstall-hooks)  cmd_uninstall_hooks "$@" ;;
+    help|-h|--help)   usage ;;
+    *)
+        echo "error: unknown subcommand: $subcmd" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
