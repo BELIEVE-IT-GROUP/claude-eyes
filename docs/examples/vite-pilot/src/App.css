@@ -10,18 +10,18 @@
 
 * { box-sizing: border-box; }
 
-body, html, #root {
+body, html {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-  min-height: 100vh;
 }
 
 .app {
   max-width: 880px;
   margin: 0 auto;
-  padding: 48px 24px 64px;
+  padding: 32px 24px 64px;
+  align-self: stretch;
 }
 
 header h1 {
@@ -51,21 +51,14 @@ header {
 
 main {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
-main > .card:last-child {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 640px) {
+@media (max-width: 880px) {
   main {
     grid-template-columns: 1fr;
-  }
-  main > .card:last-child {
-    grid-column: auto;
   }
 }
 
@@ -88,6 +81,7 @@ main > .card:last-child {
 }
 
 .card .hint {
+  margin-top: auto;
   padding-top: 16px;
 }
 
@@ -97,29 +91,45 @@ main > .card:last-child {
   font-weight: 600;
 }
 
+@keyframes fire-pulse {
+  0%, 100% { box-shadow: 0 0 24px rgba(255, 90, 0, 0.55), 0 0 48px rgba(255, 50, 0, 0.25); }
+  50%      { box-shadow: 0 0 36px rgba(255, 140, 0, 0.85), 0 0 72px rgba(255, 70, 0, 0.4); }
+}
+
 .primary {
-  background: var(--accent);
+  background: linear-gradient(135deg, #ffd166 0%, #ff7a18 35%, #e60023 80%, #7a0010 100%);
   color: #fff;
   border: none;
-  padding: 18px 36px;
-  border-radius: 10px;
-  font-size: 20px;
-  font-weight: 700;
+  padding: 14px 24px;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
   cursor: pointer;
-  width: 100%;
+  align-self: center;
+  animation: fire-pulse 2.2s ease-in-out infinite;
+  transition: transform 0.15s ease, filter 0.15s ease;
 }
 
 .primary:hover {
-  filter: brightness(1.1);
+  filter: brightness(1.08) saturate(1.15);
+  transform: translateY(-1px) scale(1.015);
+}
+
+.primary:active {
+  transform: translateY(0) scale(0.99);
 }
 
 .hero {
-  font-size: 44px;
+  font-size: 26px;
   font-weight: 700;
   margin: 0;
-  line-height: 1.05;
-  letter-spacing: -0.035em;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
   color: var(--fg);
+  text-wrap: balance;
 }
 
 .hint {

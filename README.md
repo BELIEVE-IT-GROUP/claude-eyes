@@ -8,6 +8,11 @@ A live UI feedback loop for [Claude Code](https://docs.claude.com/claude-code) t
 [![Status: v0.1 alpha](https://img.shields.io/badge/status-v0.1%20alpha-orange.svg)](#status)
 [![Node 20+](https://img.shields.io/badge/node-20%2B-green.svg)](#configuration)
 
+![claude-eyes demo](docs/demo-readme.gif)
+
+> Left pane: cmux WKWebView showing the live dev preview.
+> Right pane: a Claude Code session reading the PNG that the daemon just captured, then critiquing the actual pixels — not the DOM, not a guess.
+
 ---
 
 ## What you get
@@ -25,12 +30,9 @@ That's regression critique you can't get from a model without eyes. That's claud
 ```bash
 # 1. Clone + install
 git clone https://github.com/BELIEVE-IT-GROUP/claude-eyes ~/Developer/claude-eyes
-cd ~/Developer/claude-eyes && npm install
+cd ~/Developer/claude-eyes && bash install.sh
 
-# 2. Install hooks into your Claude Code (one-time)
-bash hooks/install.sh
-
-# 3. In any frontend project, start the daemon
+# 2. In any frontend project, start the daemon
 cd ~/Developer/<your-project>
 CLAUDE_EYES_PLAYWRIGHT=true \
 CLAUDE_EYES_DEV_URL=http://localhost:5173 \

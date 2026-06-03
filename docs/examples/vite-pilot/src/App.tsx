@@ -18,7 +18,7 @@ export default function App() {
         <div className="card">
           <h2>Botón de prueba</h2>
           <button className="primary" onClick={() => setCount(c => c + 1)}>
-            🔥 Click me ({count})
+            🔥 Dale fuego ({count})
           </button>
           <p className="hint">Pedile a Claude: "pintalo de rojo y agregale un ícono"</p>
         </div>

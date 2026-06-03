@@ -1,40 +1,49 @@
 #!/usr/bin/env bash
 # scripts/smoke-live.sh — one-shot validation of the cmux fork (CLAUDE_EYES_FORK mode)
 #
-# Run this AFTER closing your real cmux normally (⌘Q, NOT force-quit) so the
-# state snapshot at ~/Library/Application Support/cmux/session-com.cmuxterm.app.json
-# is fresh. Re-open cmux when done to restore your 9+ workspaces.
+# Uses a TAGGED debug build (bundle id com.cmuxterm.app.debug.<tag>, socket
+# /tmp/cmux-debug-<tag>.sock) so it never conflicts with the user's real cmux.
+# Untagged DEV launches are blocked by SocketControlSettings.shouldBlockUntaggedDebugLaunch().
+#
+# Prerequisite: build the tagged DEV first, from the cmux fork:
+#   cd ~/Developer/claude-eyes/.recon/cmux-src
+#   ./scripts/reload.sh --tag claude-eyes-smoke
 #
 # What this script does:
-#   1. Verifies cmux DEV.app exists at the expected derivedData path.
-#   2. Backups your real cmux state to ~/Developer/cmux-backups/.
-#   3. Launches cmux DEV.app (uses bundle ID com.cmuxterm.app.debug, no conflict).
-#   4. Waits for the DEV socket to come up.
+#   1. Verifies the tagged cmux DEV.app exists at the expected derivedData path.
+#   2. Backups the user's real cmux state as paranoia (we don't touch it).
+#   3. Launches the tagged DEV (own bundle id, own socket — no clash with real cmux).
+#   4. Waits for the tagged DEV socket /tmp/cmux-debug-<tag>.sock to appear.
 #   5. Starts a Vite pilot dev server on :5174 (off-default to avoid clashes).
-#   6. Launches a browser tab in cmux DEV pointed at the pilot.
-#   7. Runs the claude-eyes daemon in CLAUDE_EYES_FORK=true mode against the DEV socket.
-#   8. Forces 3 snapshots via the daemon HTTP API and asserts PNG bytes > 5000.
-#   9. Prints a verdict: PASS or FAIL.
+#   6. Runs the claude-eyes daemon in CLAUDE_EYES_FORK=true mode against the tagged socket.
+#   7. Forces 3 snapshots via the daemon HTTP API and asserts PNG bytes > 5000.
+#   8. Prints a verdict: PASS or FAIL.
 #
-# Tear-down: kills daemon + dev server + cmux DEV. Your real cmux is unaffected.
+# Tear-down: kills daemon + dev server + tagged cmux DEV. Real cmux is untouched.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
+TAG="${1:-claude-eyes-smoke}"
+
 # -----------------------------------------------------------------------------
 # 0. Pre-flight
 # -----------------------------------------------------------------------------
-APP="/tmp/cmux-dd/Build/Products/Debug/cmux DEV.app"
+APP="$HOME/Library/Developer/Xcode/DerivedData/cmux-$TAG/Build/Products/Debug/cmux DEV $TAG.app"
 if [ ! -d "$APP" ]; then
-  echo "❌ cmux DEV.app not found at $APP"
-  echo "   Build it first: cd .recon/cmux-src && xcodebuild ..."
+  echo "❌ tagged cmux DEV.app not found at:"
+  echo "   $APP"
+  echo ""
+  echo "   Build it first:"
+  echo "     cd ~/Developer/claude-eyes/.recon/cmux-src"
+  echo "     ./scripts/reload.sh --tag $TAG"
   exit 1
 fi
-echo "✅ cmux DEV.app present"
+echo "✅ tagged cmux DEV.app present ($TAG)"
 
 # -----------------------------------------------------------------------------
-# 1. Backup real cmux state (paranoid restore path)
+# 1. Backup real cmux state (paranoid, even though we use an isolated tag)
 # -----------------------------------------------------------------------------
 BACKUP="$HOME/Developer/cmux-backups/snapshot-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$(dirname "$BACKUP")"
@@ -44,23 +53,26 @@ echo "✅ backup at $BACKUP-*"
 echo "   to restore: cp -R \"$BACKUP-app-support/cmux\" \"\$HOME/Library/Application Support/cmux\""
 
 # -----------------------------------------------------------------------------
-# 2. Launch DEV
+# 2. Launch tagged DEV
 # -----------------------------------------------------------------------------
-echo "🚀 launching cmux DEV.app..."
-open "$APP"
-echo "   waiting 8s for socket to come up..."
-sleep 8
+DEV_SOCKET="/tmp/cmux-debug-$TAG.sock"
+rm -f "$DEV_SOCKET" 2>/dev/null || true
+echo "🚀 launching tagged cmux DEV.app..."
+open -n "$APP"
+echo "   waiting up to 30s for socket at $DEV_SOCKET..."
+for i in $(seq 1 30); do
+  if [ -S "$DEV_SOCKET" ]; then
+    break
+  fi
+  sleep 1
+done
 
-DEV_SOCKET="$HOME/Library/Application Support/cmux/cmux-501-debug.sock"
 if [ ! -S "$DEV_SOCKET" ]; then
-  # try the default socket path used by the debug build
-  DEV_SOCKET="$(cat "$HOME/Library/Application Support/cmux/last-socket-path" 2>/dev/null || echo)"
-fi
-if [ -z "$DEV_SOCKET" ] || [ ! -S "$DEV_SOCKET" ]; then
-  echo "❌ DEV socket not found. cmux DEV may not have started. Check ~/Library/Logs/cmux/."
+  echo "❌ tagged DEV socket not found at $DEV_SOCKET after 30s."
+  echo "   Check ~/Library/Logs/cmux/startup-com.cmuxterm.app.debug.$TAG.log"
   exit 1
 fi
-echo "✅ DEV socket at $DEV_SOCKET"
+echo "✅ tagged DEV socket at $DEV_SOCKET"
 
 # -----------------------------------------------------------------------------
 # 3. Start pilot dev server on :5174
@@ -83,15 +95,36 @@ for i in {1..15}; do
 done
 
 # -----------------------------------------------------------------------------
+# 3b. Open a workspace + browser tab in cmux DEV pointing at the pilot
+# -----------------------------------------------------------------------------
+CMUX_CLI_HELPER="$HOME/Developer/claude-eyes/.recon/cmux-src/scripts/cmux-debug-cli.sh"
+echo "🚀 creating workspace + browser tab in cmux DEV..."
+WS_OUT=$(CMUX_TAG="$TAG" "$CMUX_CLI_HELPER" new-workspace --name claude-eyes-smoke --cwd "$PILOT" --focus true 2>&1) || true
+echo "$WS_OUT" | sed 's/^/   workspace: /'
+SURF_OUT=$(CMUX_TAG="$TAG" "$CMUX_CLI_HELPER" new-surface --type browser --url "http://localhost:5174" --focus true 2>&1) || true
+echo "$SURF_OUT" | sed 's/^/   surface: /'
+# Capture surface:N ref so the daemon can target it directly without relying on
+# system.identify (which returns null when cmux DEV runs in background).
+SURFACE_REF=$(echo "$SURF_OUT" | grep -oE 'surface:[0-9]+' | head -1)
+if [ -z "$SURFACE_REF" ]; then
+  echo "❌ failed to capture surface ref from new-surface output"
+  exit 1
+fi
+echo "✅ targeting CMUX_SURFACE_ID=$SURFACE_REF"
+sleep 3
+
+# -----------------------------------------------------------------------------
 # 4. Launch daemon in FORK mode
 # -----------------------------------------------------------------------------
-echo "🚀 launching daemon in CLAUDE_EYES_FORK=true mode..."
-CLAUDE_EYES_FORK=true \
-CLAUDE_EYES_DEV_URL=http://localhost:5174 \
-CLAUDE_EYES_GC_KEEP=100 \
-CLAUDE_EYES_PORT=14243 \
-CMUX_SOCKET_PATH="$DEV_SOCKET" \
-nohup npx tsx "$ROOT/daemon/cli.ts" > /tmp/smoke-daemon.log 2>&1 &
+echo "🚀 launching daemon in FORK=true mode (cwd=$PILOT)..."
+(cd "$PILOT" && \
+  FORK=true \
+  CLAUDE_EYES_DEV_URL=http://localhost:5174 \
+  CLAUDE_EYES_GC_KEEP=100 \
+  CLAUDE_EYES_PORT=14243 \
+  CMUX_SOCKET_PATH="$DEV_SOCKET" \
+  CMUX_SURFACE_ID="$SURFACE_REF" \
+  nohup npx tsx "$ROOT/daemon/cli.ts" > /tmp/smoke-daemon.log 2>&1) &
 DAEMON_PID=$!
 sleep 5
 
@@ -106,7 +139,7 @@ for i in 1 2 3; do
   sleep 2
   LAST="$PILOT/.claude/eyes/last.png"
   if [ -f "$LAST" ]; then
-    BYTES=$(stat -f%z "$LAST" 2>/dev/null || stat -c%s "$LAST" 2>/dev/null)
+    BYTES=$(stat -f%z -L "$LAST" 2>/dev/null || stat -c%s -L "$LAST" 2>/dev/null)
     if [ "$BYTES" -gt 5000 ]; then
       echo "✅ snapshot #$i — $BYTES bytes"
       PASS=$((PASS + 1))
@@ -127,7 +160,8 @@ echo ""
 echo "🧹 tear-down..."
 kill "$DAEMON_PID" 2>/dev/null || true
 kill "$VITE_PID" 2>/dev/null || true
-osascript -e 'tell application "cmux DEV" to quit' 2>/dev/null || true
+osascript -e "tell application \"cmux DEV $TAG\" to quit" 2>/dev/null || true
+pkill -f "cmux DEV $TAG.app" 2>/dev/null || true
 sleep 2
 
 # -----------------------------------------------------------------------------
