@@ -100,7 +100,8 @@ url_line=""
 ts_line=""
 if [ -r "$LAST_JSON" ]; then
     # Grep for "url":"..." and "capturedAt":"..."
-    url_val="$(grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$LAST_JSON" 2>/dev/null | head -n1 | sed 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
+    url_val="$(grep -o '"sourceUrl"[[:space:]]*:[[:space:]]*"[^"]*"' "$LAST_JSON" 2>/dev/null | head -n1 | sed 's/.*"sourceUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
+    [ -z "$url_val" ] && url_val="$(grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$LAST_JSON" 2>/dev/null | head -n1 | sed 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
     ts_val="$(grep -o '"capturedAt"[[:space:]]*:[[:space:]]*"[^"]*"' "$LAST_JSON" 2>/dev/null | head -n1 | sed 's/.*"capturedAt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
     if [ -n "$url_val" ]; then
         url_line="preview url: $url_val"

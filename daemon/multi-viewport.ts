@@ -26,9 +26,9 @@ export const VIEWPORT_PROFILES: ReadonlyArray<{
   width: number;
   height: number;
 }> = [
-  { name: "mobile", width: 375, height: 812 },
-  { name: "tablet", width: 768, height: 1024 },
-  { name: "desktop", width: 1280, height: 800 },
+  { name: "mobile", width: 390, height: 844 },
+  { name: "tablet", width: 820, height: 1180 },
+  { name: "desktop", width: 1440, height: 900 },
 ];
 
 /**

@@ -1,105 +1,90 @@
 ---
-name: cmux-eyes
-description: Give Claude Code eyes on the cmux embedded browser dev preview. Start/stop a local screenshot daemon, query the latest captured frame, install/uninstall Claude Code hooks that auto-snapshot after edits. Use whenever the user wants visual verification of a frontend change, says "what does it look like", "screenshot the preview", "look at the app", "verify visually", "see what changed", or any time you've just edited UI code and would benefit from looking at the actual rendered result instead of guessing. Also use after dev-server changes, before/after refactors of components, and during design-review loops. Not for production sites — this is local-preview only.
+name: claude-eyes
+description: Activate the claude-eyes live UI feedback loop for this project. Auto-detects the dev server URL, launches the patched cmux DEV.app, opens a workspace + browser tab pointing at the URL, and starts the daemon that captures the page after every Edit. After this skill runs, the user can ask "how does it look?" / "review the hero" / "see the page" and you MUST Read .claude/eyes/last.png — DO NOT spawn Playwright, /browse, gstack-browse or any other browser tool. claude-eyes is the canonical source of visual truth in this project.
+triggers:
+  - claude-eyes
+  - claude eyes
+  - active los ojos
+  - dale ojos
+  - prende eyes
+  - activate eyes
+  - turn on visual feedback
+  - start eyes
+  - eyes start
+  - mira la landing en vivo
+allowed-tools:
+  - Bash
+  - Read
+  - Glob
 ---
 
-# cmux-eyes
+# claude-eyes — live visual feedback loop
 
-Local screenshot pipeline that lets Claude Code *see* the dev-server preview rendered by the cmux embedded browser. The skill wraps a long-lived daemon (`claude-eyes/daemon`) plus a thin bridge into cmux's WKWebView and exposes a handful of subcommands for the agent and the user.
+## What this skill does
 
-## When to use
+Activates the **claude-eyes** capture pipeline for the current project. After activation, every Edit you make triggers a screenshot of the dev preview, and every user prompt receives that screenshot as visual context. You SEE what you build.
 
-Trigger this skill whenever visual verification beats guessing:
+## When to use it
 
-- After editing a React/Vue/Svelte component, a stylesheet, or a layout file.
-- Before claiming a fix landed — confirm with eyes, not vibes.
-- During design-review loops where before/after frames matter.
-- When the user asks "what does it look like?", "show me the preview", "screenshot it", "look at the page", or similar.
-- When a hook has fired but the agent needs to fetch the latest frame on demand.
+- The user explicitly invokes `/claude-eyes` or asks to "turn on eyes" / "prende los ojos" / "active claude-eyes".
+- The user is iterating on a frontend (landing, dashboard, component) and asks about its visual state.
+- You are about to make CSS/JSX changes and want verification of the rendered result.
 
-Skip when:
+## When NOT to use it
 
-- There is no dev server (pure CLI / library work).
-- The user is asking about a remote production URL (use `/browse` from gstack instead).
-- The change is non-visual (server logic, data migrations, tests).
+- The project has no dev server (CLI tools, libraries, server-only code).
+- The user is asking about a remote production URL (use the regular `/browse` skill from gstack).
+- claude-eyes is already running for this cwd (check first with `claude-eyes status`).
 
-## Subcommands
+## Steps to activate
 
-All subcommands are invoked as `cmux-eyes <subcommand> [args]`. They shell out to the daemon CLI at `/Users/mac/Developer/claude-eyes/daemon/cli.ts` (run via `npx tsx`).
+1. **Check if already running** for this project:
+   ```bash
+   claude-eyes status
+   ```
+   If it returns JSON with `framesRetained > 0`, eyes are already active. Skip to step 4.
 
-| Subcommand | What it does |
-| --- | --- |
-| `start` | Boot the screenshot + diff daemon in the foreground (or background with `&`). Reads `CLAUDE_EYES_DEV_URL`, defaults to `http://localhost:3000`. Listens on `127.0.0.1:14242`. |
-| `stop` | POST to `/shutdown` (graceful) and fall back to `pkill -f "daemon/index.ts"` if the endpoint is missing. Removes the PID file at `.workspace/daemon.pid` if present. |
-| `status` | GET `/latest` and pretty-print the `WorkerOutput` JSON: seq, capturedAt, pngPath, framesRetained, devUrl, uptimeMs. Exits non-zero if the daemon is unreachable. |
-| `doctor` | Run health checks: node version, daemon process, `/healthz` endpoint, dev-server reachability, write permissions on `.claude/eyes/`, hook installation state in `~/.claude/settings.json`. |
-| `install-hooks` | Wire `PostToolUse` + `UserPromptSubmit` hooks into `~/.claude/settings.json` by delegating to `claude-eyes/hooks/install.sh`. Idempotent, backs up the existing file. |
-| `uninstall-hooks` | Remove the hooks (identified by the `claude-eyes:v1` marker) via `claude-eyes/hooks/uninstall.sh`. Also idempotent, also backs up. |
-| `snapshot` | Force one capture right now via POST `/snapshot`. Returns the new `WorkerOutput` so the agent can read the PNG path. |
-| `latest` | Alias for `status` — print the latest frame metadata as JSON. |
+2. **Detect the dev server URL.** Look in this order:
+   - `package.json` scripts for `"dev"` / `"start"` → infer port (vite default 5173, next default 3000, etc.)
+   - `.env` / `.env.local` for `PORT=` / `VITE_PORT=`
+   - CLAUDE.md mentions the dev port
+   - If you cannot infer with confidence, ask the user.
 
-## How to invoke from the agent
+3. **Start the daemon in fork mode** (uses the cmux WKWebView bridge for native, zero-cost capture):
+   ```bash
+   claude-eyes start --fork --url http://localhost:<port>/<optional-path> &
+   ```
+   This auto-launches the patched cmux DEV.app and creates a workspace + browser tab pointing at the URL. Wait ~5 seconds for the first capture.
 
-```bash
-# Boot once at the start of a session (or rely on the user)
-cmux-eyes start &
+4. **Verify it works**:
+   ```bash
+   claude-eyes snapshot   # force a fresh capture
+   ls -lh .claude/eyes/last.png
+   ```
 
-# Force a snapshot right now (e.g. just after Edit/Write)
-cmux-eyes snapshot
+5. **Read the capture and report**:
+   ```
+   Read .claude/eyes/last.png
+   ```
+   Describe what you see to the user. From this point on, every subsequent user prompt will inject the latest capture automatically — you will already see the page on the next turn without any extra step.
 
-# Read the latest frame the daemon captured
-cmux-eyes status
-```
+## Hard rules
 
-The `pngPath` returned by `status`/`snapshot` is an absolute path under `.claude/eyes/` that you can pass to the Read tool to actually look at the screenshot.
+- **The PNG at `.claude/eyes/last.png` IS the live preview.** When the user asks "how does it look?", you Read that file. You do NOT spawn `/browse`, `playwright`, `gstack browse`, or `npm run dev` to take your own screenshot. claude-eyes is already doing that work, and going around it wastes the user's tokens.
+- **If the capture looks inadequate** (page too long, hero compressed, wrong viewport), use `claude-eyes snapshot` to refresh — do NOT switch to a different tool. The desktop capture is 1440×900 by default, which matches what a designer sees.
+- **Stop on `claude-eyes stop`**, status with `claude-eyes status`. Three commands. That's the whole UX.
 
-## Environment
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CLAUDE_EYES_DEV_URL` | `http://localhost:3000` | Dev server URL the daemon probes. |
-| `CLAUDE_EYES_PORT` | `14242` | Daemon HTTP port. |
-| `CLAUDE_EYES_EYES_DIR` | `<repo>/.claude/eyes` | Where PNGs land. |
-| `CLAUDE_EYES_GC_KEEP` | `40` | Max retained frames. |
-| `CLAUDE_EYES_PLAYWRIGHT` | (unset) | Set `1` to capture via headless Chromium instead of macOS `screencapture`. |
-| `FORK` | (unset) | Set `1` to use the cmux bridge instead of the local capturer. |
-
-## Self-check (status → daemon health)
-
-`cmux-eyes status` is the canonical self-check. It performs:
-
-1. `GET http://127.0.0.1:${CLAUDE_EYES_PORT:-14242}/healthz` — must return `{ "ok": true, ... }`.
-2. `GET .../latest` — must return a `WorkerOutput` JSON object matching the `contracts/types.ts` shape.
-3. Exit `0` on success, `1` on unreachable daemon, `2` on malformed response.
-
-The skill self-check (run by the harness) calls `cmux-eyes status` and confirms the printed body parses as JSON with `devUrl` and `framesRetained` fields. If the daemon is not running, the self-check should suggest `cmux-eyes start &` and not error out — being "not started" is not a failure of the skill, it's just state.
-
-## Install
+## Three-command cheat sheet
 
 ```bash
-bash /Users/mac/Developer/claude-eyes/skill/install.sh
+claude-eyes start --fork --url http://localhost:5173    # boot
+claude-eyes status                                       # health
+claude-eyes stop                                         # shutdown
 ```
 
-This symlinks the skill into `~/.claude/skills/cmux-eyes/` so Claude Code picks it up alongside any other skills. Re-running is safe; it replaces stale symlinks.
+## More context
 
-## Uninstall
-
-```bash
-rm ~/.claude/skills/cmux-eyes
-cmux-eyes uninstall-hooks
-```
-
-## Files
-
-- `/Users/mac/Developer/claude-eyes/skill/SKILL.md` — this file.
-- `/Users/mac/Developer/claude-eyes/skill/install.sh` — symlink installer.
-- `/Users/mac/Developer/claude-eyes/skill/cmux-eyes` — shell entrypoint that dispatches subcommands.
-- `/Users/mac/Developer/claude-eyes/daemon/cli.ts` — underlying CLI the entrypoint delegates to.
-- `/Users/mac/Developer/claude-eyes/hooks/install.sh` — hook installer (delegated to by `install-hooks`).
-- `/Users/mac/Developer/claude-eyes/hooks/uninstall.sh` — hook uninstaller.
-
-## Notes for the auditor
-
-- Status command exit code reflects daemon reachability — not "skill broken". A non-running daemon is a normal state.
-- Hook install/uninstall is delegated entirely to `hooks/install.sh` / `hooks/uninstall.sh`; the skill adds no extra hook surface area.
-- The skill never writes outside `/Users/mac/Developer/claude-eyes/` except for: (a) `~/.claude/skills/cmux-eyes` symlink, and (b) `~/.claude/settings.json` (only when the user runs `install-hooks`/`uninstall-hooks`, with a backup).
+- Repo: https://github.com/BELIEVE-IT-GROUP/claude-eyes
+- Daemon source: `/Users/mac/Developer/claude-eyes/daemon/`
+- Hook scripts (already installed at `~/.claude/settings.json`): `/Users/mac/Developer/claude-eyes/hooks/`
+- Capture key for HTTP API: `~/.claude-eyes/key`

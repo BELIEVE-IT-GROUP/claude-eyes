@@ -68,6 +68,14 @@ if ! echo ":$PATH:" | grep -q ":$BIN_TARGET:"; then
 fi
 
 # ---------------------------------------------------------------------------
+# 3c. Register /claude-eyes as a Claude Code skill
+# ---------------------------------------------------------------------------
+SKILLS_DIR="$HOME/.claude/skills/claude-eyes"
+mkdir -p "$SKILLS_DIR"
+cp -f "$SCRIPT_DIR/skill/SKILL.md" "$SKILLS_DIR/SKILL.md"
+green "✓ /claude-eyes skill at $SKILLS_DIR"
+
+# ---------------------------------------------------------------------------
 # 4. Per-user state dir + capture key
 # ---------------------------------------------------------------------------
 EYES_DIR="$HOME/.claude-eyes"
