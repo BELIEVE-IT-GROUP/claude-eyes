@@ -50,6 +50,24 @@ bash "$SCRIPT_DIR/hooks/install.sh"
 green "✓ hooks installed"
 
 # ---------------------------------------------------------------------------
+# 3b. Symlink `claude-eyes` into PATH
+# ---------------------------------------------------------------------------
+BIN_TARGET=""
+for d in "/usr/local/bin" "$HOME/.local/bin" "$HOME/bin"; do
+  if [ -d "$d" ] && [ -w "$d" ]; then
+    BIN_TARGET="$d"; break
+  fi
+done
+if [ -z "$BIN_TARGET" ]; then
+  mkdir -p "$HOME/.local/bin" && BIN_TARGET="$HOME/.local/bin"
+fi
+ln -sf "$SCRIPT_DIR/bin/claude-eyes" "$BIN_TARGET/claude-eyes"
+green "✓ claude-eyes command at $BIN_TARGET/claude-eyes"
+if ! echo ":$PATH:" | grep -q ":$BIN_TARGET:"; then
+  yellow "  add to your shell rc:    export PATH=\"$BIN_TARGET:\$PATH\""
+fi
+
+# ---------------------------------------------------------------------------
 # 4. Per-user state dir + capture key
 # ---------------------------------------------------------------------------
 EYES_DIR="$HOME/.claude-eyes"
@@ -65,22 +83,21 @@ green "✓ capture key at $KEY_FILE"
 # 5. Next steps
 # ---------------------------------------------------------------------------
 echo
-cyan "🎉  Done. Now use it from any frontend project:"
+cyan "🎉  Done. Three commands to remember:"
 cat <<EOF
 
+  # In your frontend project (dev server already running on :5173)
   cd ~/Developer/<your-project>
-  CLAUDE_EYES_PLAYWRIGHT=true \\
-  CLAUDE_EYES_DEV_URL=http://localhost:5173 \\
-    npx tsx $SCRIPT_DIR/daemon/cli.ts &
+  CLAUDE_EYES_PLAYWRIGHT=true CLAUDE_EYES_DEV_URL=http://localhost:5173 claude-eyes start &
 
-  # then open Claude Code in the same project — every Edit captures a PNG
-  # and the next prompt is injected with it as <image> context.
+  claude-eyes status    # health + latest capture metadata
+  claude-eyes stop      # graceful shutdown
 
 EOF
 
-yellow "Optional native bridge mode (when cmux fork is available):"
-echo "  FORK=true CMUX_SOCKET_PATH=/tmp/cmux-debug-<tag>.sock CMUX_SURFACE_ID=surface:N ..."
+yellow "Optional native bridge mode (when the cmux fork is available):"
+echo "  FORK=true CMUX_SOCKET_PATH=/tmp/cmux-debug-<tag>.sock CMUX_SURFACE_ID=surface:N claude-eyes start"
 echo
-yellow "Health check:"
-echo "  curl -s -H \"x-eyes-key: \$(cat $KEY_FILE)\" http://127.0.0.1:14242/healthz"
+yellow "Per-project capture key:"
+echo "  $KEY_FILE"
 echo

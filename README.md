@@ -28,15 +28,21 @@ That's regression critique you can't get from a model without eyes. That's claud
 ## TL;DR
 
 ```bash
-# 1. Clone + install
+# 1. Clone + install (installs hooks + global `claude-eyes` command)
 git clone https://github.com/BELIEVE-IT-GROUP/claude-eyes ~/Developer/claude-eyes
 cd ~/Developer/claude-eyes && bash install.sh
 
 # 2. In any frontend project, start the daemon
 cd ~/Developer/<your-project>
-CLAUDE_EYES_PLAYWRIGHT=true \
-CLAUDE_EYES_DEV_URL=http://localhost:5173 \
-  npx tsx ~/Developer/claude-eyes/daemon/cli.ts
+CLAUDE_EYES_PLAYWRIGHT=true CLAUDE_EYES_DEV_URL=http://localhost:5173 claude-eyes start &
+```
+
+Three commands to remember:
+
+```bash
+claude-eyes start     # boot the daemon (use env vars above)
+claude-eyes status    # health + latest capture metadata
+claude-eyes stop      # graceful shutdown
 ```
 
 Then open Claude Code in the same project. Every `Edit`/`Write` triggers a screenshot. Every prompt injects it as `<image>` context. Claude sees your UI.
