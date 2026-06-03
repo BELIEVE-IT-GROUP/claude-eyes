@@ -70,15 +70,25 @@ require_npx() {
     fi
 }
 
+_eyes_key() {
+    [ -r "$HOME/.claude-eyes/key" ] && cat "$HOME/.claude-eyes/key" || echo ""
+}
+
 http_get() {
     # $1 = path; prints body to stdout, exit non-zero on connection failure.
-    curl -fsS --max-time 8 "http://${HOST}:${PORT}$1"
+    local key
+    key="$(_eyes_key)"
+    curl -fsS --max-time 8 -H "x-eyes-key: $key" "http://${HOST}:${PORT}$1"
 }
 
 http_post() {
     # $1 = path, $2 = body (default "{}")
     local body="${2:-{}}"
-    curl -fsS --max-time 15 -X POST -H "Content-Type: application/json" \
+    local key
+    key="$(_eyes_key)"
+    curl -fsS --max-time 15 -X POST \
+        -H "Content-Type: application/json" \
+        -H "x-eyes-key: $key" \
         --data "$body" "http://${HOST}:${PORT}$1"
 }
 
