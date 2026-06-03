@@ -1,0 +1,58 @@
+docs/examples/vite-pilot/package-lock.json
+  ai_agent 1-2768
+docs/examples/vite-pilot/src/App.css
+  s_d16f8bbd460809::t_9b1cd594fcb81b 54,56,59
+  s_7b3cbc59de0f9b::t_f5a1cb94eb7795 23-24
+  s_d16f8bbd460809::t_acd1fe45bb4bde 126,129-130,132
+  s_d16f8bbd460809::t_a0022b937e830a 111
+  s_d16f8bbd460809::t_d9c38ac4105b43 84
+  s_d16f8bbd460809::t_ec8cdfe8937ef4 103,105,109
+  s_7b3cbc59de0f9b::t_129cf0653026f0 13
+  s_d16f8bbd460809::t_fb530081ae6672 94-98,100,104,106-108,112-113,117-122
+docs/examples/vite-pilot/src/App.tsx
+  s_d16f8bbd460809::t_cd54aa17bd0da0 21
+README.md
+  s_7b3cbc59de0f9b::t_fd52eed5e15eb8 11-15,33,35
+install.sh
+  s_7b3cbc59de0f9b::t_f141bff452f8e9 1-86
+scripts/smoke-live.sh
+  s_4c8e15816b1c40::t_97a74d12111f23 126
+  s_4c8e15816b1c40::t_28b0d97ff9ae12 4-10,13-16,18-20,22,28-29,33,35-40,43,46,56,58-68,71-72,75
+  s_4c8e15816b1c40::t_789963d8a2e397 163-164
+  s_4c8e15816b1c40::t_d11d7ac443eb7a 142
+  s_4c8e15816b1c40::t_a7dca2501fca9c 98-104,114-115
+  s_4c8e15816b1c40::t_8e24c1ed370fdf 105-113
+  s_4c8e15816b1c40::t_23acc766afcb7c 119-125,127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cf2f42c92020565843da200c2180c933e3687089",
+  "prompts": {},
+  "sessions": {
+    "s_4c8e15816b1c40": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25a44ebf-60ae-400a-b3ae-57d8bb649b1b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Jbelieve <jorge@believe-global.com>"
+    },
+    "s_7b3cbc59de0f9b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12fdbaaa-ae7e-463a-b0df-8021df7f01f9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Jbelieve <jorge@believe-global.com>"
+    },
+    "s_d16f8bbd460809": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9d90bd8-394e-471e-9bd0-36acf6f1bdad",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Jbelieve <jorge@believe-global.com>"
+    }
+  }
+}
