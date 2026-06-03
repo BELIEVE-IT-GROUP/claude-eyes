@@ -85,8 +85,80 @@ http_post() {
 cmd_start() {
     require_node
     require_npx
-    cd "$REPO_ROOT"
-    exec npx tsx daemon/cli.ts start "$@"
+
+    local USE_FORK=0
+    local USE_PLAYWRIGHT=0
+    local DEV_URL=""
+    local CMUX_APP=""
+    local CMUX_TAG="claude-eyes-smoke"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --fork)        USE_FORK=1; shift ;;
+            --playwright)  USE_PLAYWRIGHT=1; shift ;;
+            --url)         DEV_URL="$2"; shift 2 ;;
+            --tag)         CMUX_TAG="$2"; shift 2 ;;
+            --)            shift; break ;;
+            *)             break ;;
+        esac
+    done
+
+    # Defaults
+    [ -z "$DEV_URL" ] && DEV_URL="${CLAUDE_EYES_DEV_URL:-http://localhost:5173}"
+    [ "$USE_FORK" = 0 ] && [ "$USE_PLAYWRIGHT" = 0 ] && [ "${CLAUDE_EYES_FORK:-}" = "true" ] && USE_FORK=1
+    [ "$USE_FORK" = 0 ] && [ "$USE_PLAYWRIGHT" = 0 ] && USE_PLAYWRIGHT=1
+
+    local CALLER_CWD="$PWD"
+
+    if [ "$USE_FORK" = 1 ]; then
+        # Bridge mode — auto-detect or boot the patched cmux DEV.
+        CMUX_APP="$HOME/Library/Developer/Xcode/DerivedData/cmux-${CMUX_TAG}/Build/Products/Debug/cmux DEV ${CMUX_TAG}.app"
+        if [ ! -d "$CMUX_APP" ]; then
+            echo "❌ patched cmux not found at:" >&2
+            echo "   $CMUX_APP" >&2
+            echo "   Build it first:" >&2
+            echo "     cd $REPO_ROOT/.recon/cmux-src && ./scripts/reload.sh --tag $CMUX_TAG" >&2
+            exit 1
+        fi
+        local SOCKET="/tmp/cmux-debug-${CMUX_TAG}.sock"
+        if [ ! -S "$SOCKET" ]; then
+            echo "→ launching $CMUX_APP"
+            open -n "$CMUX_APP"
+            for _ in $(seq 1 30); do
+                [ -S "$SOCKET" ] && break
+                sleep 1
+            done
+            [ -S "$SOCKET" ] || { echo "❌ cmux socket did not come up" >&2; exit 1; }
+        fi
+        # Find or create a browser surface pointing at DEV_URL.
+        local CLI="$REPO_ROOT/.recon/cmux-src/scripts/cmux-debug-cli.sh"
+        if [ ! -x "$CLI" ]; then
+            echo "❌ cmux-debug-cli.sh not found (needs the cmux-src checkout under .recon/)" >&2
+            exit 1
+        fi
+        local SURFACE
+        SURFACE=$(CMUX_TAG="$CMUX_TAG" CMUX_QUIET=1 "$CLI" new-workspace --name "eyes-$(basename "$CALLER_CWD")" --cwd "$CALLER_CWD" --focus true 2>/dev/null | grep -oE 'workspace:[0-9]+' | head -1)
+        SURFACE=$(CMUX_TAG="$CMUX_TAG" CMUX_QUIET=1 "$CLI" new-surface --type browser --url "$DEV_URL" --focus true 2>/dev/null | grep -oE 'surface:[0-9]+' | head -1)
+        [ -z "$SURFACE" ] && { echo "❌ could not allocate browser surface" >&2; exit 1; }
+        echo "→ FORK mode: socket=$SOCKET surface=$SURFACE url=$DEV_URL cwd=$CALLER_CWD"
+        cd "$CALLER_CWD"
+        exec env \
+            FORK=true \
+            CLAUDE_EYES_DEV_URL="$DEV_URL" \
+            CMUX_SOCKET_PATH="$SOCKET" \
+            CMUX_SURFACE_ID="$SURFACE" \
+            CLAUDE_EYES_PORT="${CLAUDE_EYES_PORT:-14242}" \
+            npx tsx "$REPO_ROOT/daemon/cli.ts" start "$@"
+    fi
+
+    # Playwright mode
+    echo "→ PLAYWRIGHT mode: url=$DEV_URL cwd=$CALLER_CWD"
+    cd "$CALLER_CWD"
+    exec env \
+        CLAUDE_EYES_PLAYWRIGHT=true \
+        CLAUDE_EYES_DEV_URL="$DEV_URL" \
+        CLAUDE_EYES_PORT="${CLAUDE_EYES_PORT:-14242}" \
+        npx tsx "$REPO_ROOT/daemon/cli.ts" start "$@"
 }
 
 cmd_stop() {
