@@ -113,8 +113,16 @@ fi
 # Build additionalContext as a JSON string body. We hand the raw multi-line
 # text to node, which is already a hard dep elsewhere in the project, but we
 # also fall back to a pure-awk encoder so this hook works without node.
-context_body="$(printf 'claude-eyes capture (age %ss)\n<image path="%s" />\n%s\n%s\n' \
-    "$age" "$abs_png" "$url_line" "$ts_line")"
+context_body="$(printf '%s\n%s\n\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n' \
+"👁 claude-eyes — a live screenshot of the user's dev preview is available." \
+"" \
+"  path:        $abs_png" \
+"  $url_line" \
+"  $ts_line (${age}s ago)" \
+"BEFORE answering any question about UI / design / layout / what the page looks like, you MUST use the Read tool on that path to actually see the current rendered state. The PNG is the source of truth — not the DOM, not the source files, not your memory of previous edits." \
+"DO NOT spawn a new browser via playwright, gstack/browse, or any other tool to capture this page — claude-eyes already did, the file above is fresh." \
+"" \
+"If you just edited code in this project, the capture will refresh on next prompt automatically — no manual snapshot needed.")"
 
 if command -v node >/dev/null 2>&1; then
     payload="$(CTX="$context_body" node -e '
