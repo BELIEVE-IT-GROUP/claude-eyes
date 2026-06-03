@@ -1,0 +1,19 @@
+skill/cmux-eyes
+  s_7b3cbc59de0f9b::t_97b8a664cef0f2 73-76,79-81,87-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "901459ead999a66716a09588f4c74c3980e3857b",
+  "prompts": {},
+  "sessions": {
+    "s_7b3cbc59de0f9b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12fdbaaa-ae7e-463a-b0df-8021df7f01f9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Jbelieve <jorge@believe-global.com>"
+    }
+  }
+}
